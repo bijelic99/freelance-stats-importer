@@ -28,14 +28,16 @@ releaseProcess := Seq[ReleaseStep](
   pushChanges
 )
 
-lazy val AkkaVersion = "2.6.18"
+lazy val AkkaVersion = "2.6.14"
 
 libraryDependencies ++= Seq(
   "com.google.inject" % "guice" % "5.0.1",
+  "ch.qos.logback" % "logback-classic" % "1.2.10",
   "com.typesafe" % "config" % "1.4.1",
   "com.typesafe.akka" %% "akka-stream" % AkkaVersion,
-  "com.freelance-stats" %% "alpakka-rabbitmq-client" % "0.0.1",
-  "com.freelance-stats" %% "amazon-async-s3-client" % "0.0.3"
+  "com.freelance-stats" %% "alpakka-rabbitmq-client" % "0.0.2",
+  "com.freelance-stats" %% "amazon-async-s3-client" % "0.0.3",
+  "com.freelance-stats" %% "commons" % "0.0.4"
 )
 
 resolvers ++= Seq(
