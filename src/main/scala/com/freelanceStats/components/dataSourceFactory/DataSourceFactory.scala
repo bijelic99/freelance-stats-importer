@@ -1,12 +1,14 @@
 package com.freelanceStats.components.dataSourceFactory
 
+import akka.Done
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Source, StreamConverters}
+import akka.util.ByteString
 import com.freelanceStats.configurations.sources.SourceConfiguration
 import com.freelanceStats.models.page.Page
 import com.freelanceStats.models.pageMetadata.PageMetadata
 import com.freelanceStats.s3Client.S3Client
-import play.api.libs.json.{Json, Reads}
+import play.api.libs.json.{Json, Reads, Writes}
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -35,6 +37,18 @@ trait DataSourceFactory[Metadata <: PageMetadata] {
         case None =>
           defaultPageMetadata
       }
+
+  def saveLastPageMetadata(
+      lastPageMetadata: Metadata
+  )(implicit
+      writes: Writes[Metadata]
+  ): Future[Done] = {
+    val source =
+      Source.single(ByteString(Json.toBytes(Json.toJson(lastPageMetadata))))
+    s3Client
+      .put(configuration.lastPageMetadataFile, source)
+      .map(_ => Done)
+  }
 
   def create: Source[Page[Metadata], _]
 }

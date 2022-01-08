@@ -3,12 +3,12 @@ package com.freelanceStats.components.dataSourceFactory
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
-import akka.stream.{DelayOverflowStrategy, Materializer}
+import akka.stream.Materializer
 import akka.stream.scaladsl.{Sink, Source}
+import com.freelanceStats.components.S3Client
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
 import com.freelanceStats.models.page.{FreelancerPage, Page}
 import com.freelanceStats.models.pageMetadata.FreelancerPageMetadata
-import com.freelanceStats.components.S3Client
 import org.joda.time.DateTime
 
 import javax.inject.Inject
@@ -34,18 +34,25 @@ class FreelancerDataSourceFactory @Inject() (
   override def create: Source[Page[FreelancerPageMetadata], _] =
     Source
       .future(lastPageMetadata())
-      .map(_.createNext(configuration.maxFetchOffset))
       .flatMapConcat(lstPageMetadata =>
         Source
-          .unfoldAsync(lstPageMetadata)(fetchPage)
-          .delay(configuration.frequency, DelayOverflowStrategy.backpressure)
+          .unfoldAsync(
+            lstPageMetadata.createNext(configuration.maxFetchOffset)
+          ) { metadata =>
+            saveLastPageMetadata(metadata)
+              .flatMap(_ => fetchPage(metadata))
+              .map(
+                _.map(metadata.createNext(configuration.maxFetchOffset) -> _)
+              )
+          }
+          .throttle(1, configuration.frequency)
       )
 
   private lazy val pool = Http().superPool[FreelancerPageMetadata]()
 
   def fetchPage(
       pageMetadata: FreelancerPageMetadata
-  ): Future[Option[(FreelancerPageMetadata, FreelancerPage)]] =
+  ): Future[Option[FreelancerPage]] =
     Source
       .single(pageMetadata)
       .map { case FreelancerPageMetadata(fetchFrom, fetchTo) =>
@@ -59,12 +66,9 @@ class FreelancerDataSourceFactory @Inject() (
       .map {
         case (Success(response), metadata) if response.status.isSuccess() =>
           Some(
-            (
-              pageMetadata.createNext(configuration.maxFetchOffset),
-              FreelancerPage(
-                metadata,
-                response.entity.dataBytes
-              )
+            FreelancerPage(
+              metadata,
+              response.entity.dataBytes
             )
           )
         case _ =>
