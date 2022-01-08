@@ -5,7 +5,7 @@ import akka.util.ByteString
 import com.freelanceStats.models.page.Page.PageContents
 import com.freelanceStats.models.pageMetadata.PageMetadata
 
-trait Page[Metadata <: PageMetadata] {
+trait Page[+Metadata <: PageMetadata] {
   def metadata: Metadata
   def contents: PageContents
 }

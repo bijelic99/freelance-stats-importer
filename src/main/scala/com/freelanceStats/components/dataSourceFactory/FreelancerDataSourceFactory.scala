@@ -8,7 +8,7 @@ import akka.stream.scaladsl.{Sink, Source}
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
 import com.freelanceStats.models.page.{FreelancerPage, Page}
 import com.freelanceStats.models.pageMetadata.FreelancerPageMetadata
-import com.freelanceStats.s3Client.S3Client
+import com.freelanceStats.components.S3Client
 import org.joda.time.DateTime
 
 import javax.inject.Inject

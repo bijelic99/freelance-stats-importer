@@ -1,9 +1,9 @@
 package com.freelanceStats.models.pageMetadata
 
-import org.joda.time.{DateTime, ReadableDuration}
+import com.github.nscala_time.time.Imports._
+import org.joda.time.DateTime
 import play.api.libs.json.{Format, Json}
 
-import com.github.nscala_time.time.Imports._
 import scala.util.chaining._
 
 case class FreelancerPageMetadata(
@@ -20,7 +20,7 @@ object FreelancerPageMetadata {
   implicit class FreelancerPageMetadataOps(
       freelancerPageMetadata: FreelancerPageMetadata
   ) {
-    def createNext(maxOffset: ReadableDuration): FreelancerPageMetadata = {
+    def createNext(maxOffset: Period): FreelancerPageMetadata = {
       val fetchTo =
         (freelancerPageMetadata.fetchTo + maxOffset)
           .pipe {
