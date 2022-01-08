@@ -35,9 +35,10 @@ libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-classic" % "1.2.10",
   "com.typesafe" % "config" % "1.4.1",
   "com.typesafe.akka" %% "akka-stream" % AkkaVersion,
+  "com.typesafe.akka" %% "akka-http" % "10.2.7",
   "com.freelance-stats" %% "alpakka-rabbitmq-client" % "0.0.2",
   "com.freelance-stats" %% "amazon-async-s3-client" % "0.0.3",
-  "com.freelance-stats" %% "commons" % "0.0.6"
+  "com.freelance-stats" %% "commons" % "0.0.7"
 )
 
 resolvers ++= Seq(

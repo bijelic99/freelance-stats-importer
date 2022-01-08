@@ -4,12 +4,10 @@ import akka.Done
 import akka.actor.ActorSystem
 import akka.stream.scaladsl.{Keep, RunnableGraph}
 import akka.stream.{KillSwitch, KillSwitches, Materializer}
-import com.freelanceStats.commons.models.RawJob
 import com.freelanceStats.components.dataSourceFactory.DataSourceFactory
 import com.freelanceStats.components.jobArchiverFactory.JobArchiverFactory
 import com.freelanceStats.components.jobCreatorFactory.JobCreatorFactory
-import com.freelanceStats.models.PageMetadata
-import com.freelanceStats.queueClient.QueueConsumer
+import com.freelanceStats.models.pageMetadata.PageMetadata
 
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -20,7 +18,7 @@ class StreamMaintainer @Inject() (
     dataSourceFactory: DataSourceFactory[PageMetadata],
     jobCreatorFactory: JobCreatorFactory[PageMetadata],
     jobArchiverFactory: JobArchiverFactory,
-    queueConsumer: QueueConsumer[RawJob]
+    queueClient: QueueClient
 )(
     override implicit val executionContext: ExecutionContext,
     override implicit val system: ActorSystem
@@ -32,7 +30,7 @@ class StreamMaintainer @Inject() (
   private val source = dataSourceFactory.create
   private val jobCreator = jobCreatorFactory.create
   private val jobArchiver = jobArchiverFactory.create
-  private val sink = queueConsumer.sink
+  private val sink = queueClient.sink
 
   override val runnableGraph: RunnableGraph[(KillSwitch, Future[Done])] =
     source
