@@ -37,7 +37,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-stream" % AkkaVersion,
   "com.freelance-stats" %% "alpakka-rabbitmq-client" % "0.0.2",
   "com.freelance-stats" %% "amazon-async-s3-client" % "0.0.3",
-  "com.freelance-stats" %% "commons" % "0.0.4"
+  "com.freelance-stats" %% "commons" % "0.0.5"
 )
 
 resolvers ++= Seq(
