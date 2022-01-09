@@ -1,6 +1,5 @@
 package com.freelanceStats.components.dataSourceFactory
 
-import akka.Done
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Source, StreamConverters}
 import akka.util.ByteString
@@ -42,12 +41,12 @@ trait DataSourceFactory[Metadata <: PageMetadata] {
       lastPageMetadata: Metadata
   )(implicit
       writes: Writes[Metadata]
-  ): Future[Done] = {
+  ): Future[Unit] = {
     val source =
       Source.single(ByteString(Json.toBytes(Json.toJson(lastPageMetadata))))
     s3Client
       .put(configuration.lastPageMetadataFile, source)
-      .map(_ => Done)
+      .map(_ => ())
   }
 
   def create: Source[Page[Metadata], _]

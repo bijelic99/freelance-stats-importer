@@ -35,9 +35,10 @@ class FreelancerJobCreatorFactory @Inject() (
               .asOpt[Seq[JsObject]]
               .getOrElse(Nil)
               .map { job =>
+                val jobByteArray = Json.toBytes(job)
                 UnsavedRawJob(
                   id = None,
-                  sourceId = (job \ "id").as[String],
+                  sourceId = (job \ "id").as[Long].toString,
                   source = applicationConfiguration.source,
                   created = (job \ "time_submitted")
                     .as[Long]
@@ -48,7 +49,9 @@ class FreelancerJobCreatorFactory @Inject() (
                   data = StreamConverters
                     .fromInputStream(() =>
                       new ByteArrayInputStream(Json.toBytes(job))
-                    )
+                    ),
+                  contentType = "application/json",
+                  contentSize = jobByteArray.length
                 )
               }
           )

@@ -4,7 +4,7 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
 import akka.stream.Materializer
-import akka.stream.scaladsl.{Sink, Source}
+import akka.stream.scaladsl.{Flow, Sink, Source}
 import com.freelanceStats.components.S3Client
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
 import com.freelanceStats.models.page.{FreelancerPage, Page}
@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Success
+import scala.util.{Failure, Success}
 
 class FreelancerDataSourceFactory @Inject() (
     override val s3Client: S3Client,
@@ -40,46 +40,56 @@ class FreelancerDataSourceFactory @Inject() (
       .future(lastPageMetadata())
       .flatMapConcat(lstPageMetadata =>
         Source
-          .unfoldAsync(
+          .unfold(
             lstPageMetadata.createNext(configuration.maxFetchOffset)
           ) { metadata =>
-            saveLastPageMetadata(metadata)
-              .flatMap(_ => fetchPage(metadata))
-              .map(
-                _.map(metadata.createNext(configuration.maxFetchOffset) -> _)
+            Some(
+              (
+                metadata.createNext(configuration.maxFetchOffset),
+                metadata
               )
+            )
           }
           .throttle(1, configuration.frequency)
+      )
+      .via(fetchPage)
+      .wireTap(
+        Sink
+          .foreachAsync[FreelancerPage](1)(page =>
+            saveLastPageMetadata(page.metadata)
+          )
       )
 
   private lazy val pool = Http().superPool[FreelancerPageMetadata]()
 
-  def fetchPage(
-      pageMetadata: FreelancerPageMetadata
-  ): Future[Option[FreelancerPage]] =
-    Source
-      .single(pageMetadata)
-      .map { case FreelancerPageMetadata(fetchFrom, fetchTo) =>
+  lazy val fetchPage: Flow[FreelancerPageMetadata, FreelancerPage, _] =
+    Flow[FreelancerPageMetadata]
+      .map { metadata =>
         val fetchFromSeconds =
-          TimeUnit.MILLISECONDS.toSeconds(fetchFrom.getMillis)
-        val fetchToSeconds = TimeUnit.MILLISECONDS.toSeconds(fetchTo.getMillis)
+          TimeUnit.MILLISECONDS.toSeconds(metadata.fetchFrom.getMillis)
+        val fetchToSeconds =
+          TimeUnit.MILLISECONDS.toSeconds(metadata.fetchTo.getMillis)
         HttpRequest(
           method = HttpMethods.GET,
           uri =
             s"${configuration.url}/api/projects/0.1/projects/active?from_time=$fetchFromSeconds&to_time=$fetchToSeconds"
-        ) -> pageMetadata
+        ) -> metadata
       }
       .via(pool)
       .map {
         case (Success(response), metadata) if response.status.isSuccess() =>
-          Some(
-            FreelancerPage(
-              metadata,
-              response.entity.dataBytes
-            )
+          FreelancerPage(
+            metadata,
+            response.entity.dataBytes
           )
-        case _ =>
-          None
+        case (Success(response), metadata) =>
+          val message =
+            s"Received response with code ${response.status} for '$metadata'"
+          log.error(message)
+          throw new Exception(message)
+        case (Failure(throwable), metadata) =>
+          val message = s"Failed to receive response for '$metadata'"
+          log.error(message, throwable)
+          throw new Exception(message, throwable)
       }
-      .runWith(Sink.head)
 }
