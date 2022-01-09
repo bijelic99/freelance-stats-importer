@@ -10,7 +10,9 @@ import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
 import com.freelanceStats.models.page.{FreelancerPage, Page}
 import com.freelanceStats.models.pageMetadata.FreelancerPageMetadata
 import org.joda.time.DateTime
+import org.slf4j.LoggerFactory
 
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Success
@@ -24,6 +26,8 @@ class FreelancerDataSourceFactory @Inject() (
     override implicit val materializer: Materializer
 ) extends DataSourceFactory[FreelancerPageMetadata] {
   import FreelancerPageMetadata._
+
+  private val log = LoggerFactory.getLogger(getClass)
 
   protected override def defaultPageMetadata: FreelancerPageMetadata =
     FreelancerPageMetadata.apply(
@@ -56,10 +60,13 @@ class FreelancerDataSourceFactory @Inject() (
     Source
       .single(pageMetadata)
       .map { case FreelancerPageMetadata(fetchFrom, fetchTo) =>
+        val fetchFromSeconds =
+          TimeUnit.MILLISECONDS.toSeconds(fetchFrom.getMillis)
+        val fetchToSeconds = TimeUnit.MILLISECONDS.toSeconds(fetchTo.getMillis)
         HttpRequest(
           method = HttpMethods.GET,
           uri =
-            s"${configuration.url}/api/projects/0.1/projects/active?from_time=${fetchFrom.getMillis}&to_time=${fetchTo.getMillis}"
+            s"${configuration.url}/api/projects/0.1/projects/active?from_time=$fetchFromSeconds&to_time=$fetchToSeconds"
         ) -> pageMetadata
       }
       .via(pool)

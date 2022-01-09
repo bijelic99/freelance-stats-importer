@@ -7,6 +7,7 @@ import akka.stream.{KillSwitch, KillSwitches, Materializer}
 import com.freelanceStats.components.dataSourceFactory.DataSourceFactory
 import com.freelanceStats.components.jobArchiverFactory.JobArchiverFactory
 import com.freelanceStats.components.jobCreatorFactory.JobCreatorFactory
+import com.freelanceStats.components.queue.QueueClient
 import com.freelanceStats.models.pageMetadata.PageMetadata
 
 import javax.inject.{Inject, Singleton}

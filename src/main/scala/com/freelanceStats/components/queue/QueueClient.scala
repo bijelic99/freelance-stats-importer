@@ -1,13 +1,12 @@
-package com.freelanceStats.components
+package com.freelanceStats.components.queue
 
 import akka.stream.Materializer
 import akka.util.ByteString
 import com.freelanceStats.alpakkaRabbitMQClient.AlpakkaRabbitMQConsumer
-import com.freelanceStats.alpakkaRabbitMQClient.connectionProviderFactory.ConnectionProviderFactory
 import com.freelanceStats.alpakkaRabbitMQClient.elementConverter.ElementToByteStringConverter
 import com.freelanceStats.commons.implicits.playJson.ModelsFormat
 import com.freelanceStats.commons.models.RawJob
-import com.freelanceStats.components.QueueClient.RawJobToByteStringConverter
+import com.freelanceStats.components.queue.QueueClient.RawJobToByteStringConverter
 import com.freelanceStats.configurations.AlpakkaRabbitMQClientConfiguration
 import play.api.libs.json.Json
 
@@ -16,7 +15,7 @@ import javax.inject.{Inject, Singleton}
 @Singleton
 class QueueClient @Inject() (
     override val configuration: AlpakkaRabbitMQClientConfiguration,
-    override val connectionProviderFactory: ConnectionProviderFactory
+    override val connectionProviderFactory: UriConnectionProviderFactory
 )(
     override implicit val materializer: Materializer
 ) extends AlpakkaRabbitMQConsumer[RawJob] {
