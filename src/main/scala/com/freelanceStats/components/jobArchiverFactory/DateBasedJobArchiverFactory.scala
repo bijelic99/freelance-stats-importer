@@ -36,12 +36,12 @@ class DateBasedJobArchiverFactory @Inject() (
               contentSize,
               data
             ) =>
-          val currentDate = DateTime.now().toString("dd-MM-yyyy")
+          val createdDateStr = created.toString("dd-MM-yyyy")
           val futureFileReference =
             FileReference(
               bucket = applicationConfiguration.bucket,
               key =
-                s"${applicationConfiguration.source}/$currentDate/$sourceId${mimeTypes.forName(contentType).getExtension}",
+                s"${applicationConfiguration.source}/$createdDateStr/$sourceId${mimeTypes.forName(contentType).getExtension}",
               contentType = Some(contentType),
               size = Some(contentSize)
             )

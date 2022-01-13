@@ -80,7 +80,7 @@ class FreelancerDataSourceFactory @Inject() (
         HttpRequest(
           method = HttpMethods.GET,
           uri =
-            s"${configuration.url}/api/projects/0.1/projects/active?from_time=$fetchFromSeconds&to_time=$fetchToSeconds"
+            s"${configuration.url}/api/projects/0.1/projects/active?from_time=$fetchFromSeconds&to_time=$fetchToSeconds&full_description=true&job_details=true"
         ) -> metadata
       }
       .via(pool)
