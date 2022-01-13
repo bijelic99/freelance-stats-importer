@@ -1,5 +1,6 @@
 package com.freelanceStats.components.dataSourceFactory
 
+import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
@@ -14,7 +15,7 @@ import org.slf4j.LoggerFactory
 
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
 class FreelancerDataSourceFactory @Inject() (
@@ -38,7 +39,22 @@ class FreelancerDataSourceFactory @Inject() (
   override def create: Source[Page[FreelancerPageMetadata], _] =
     Source
       .future(lastPageMetadata())
-      .flatMapConcat(lstPageMetadata =>
+      .via(
+        pageMetadataUnfold
+          .throttle(1, configuration.frequency)
+      )
+      .via(fetchPage)
+      .wireTap(
+        Sink
+          .foreachAsync[FreelancerPage](1)(page =>
+            saveLastPageMetadata(page.metadata)
+          )
+      )
+
+  private lazy val pageMetadataUnfold
+      : Flow[FreelancerPageMetadata, FreelancerPageMetadata, NotUsed] =
+    Flow[FreelancerPageMetadata]
+      .flatMapConcat { lstPageMetadata =>
         Source
           .unfold(
             lstPageMetadata.createNext(configuration.maxFetchOffset)
@@ -50,15 +66,7 @@ class FreelancerDataSourceFactory @Inject() (
               )
             )
           }
-          .throttle(1, configuration.frequency)
-      )
-      .via(fetchPage)
-      .wireTap(
-        Sink
-          .foreachAsync[FreelancerPage](1)(page =>
-            saveLastPageMetadata(page.metadata)
-          )
-      )
+      }
 
   private lazy val pool = Http().superPool[FreelancerPageMetadata]()
 
