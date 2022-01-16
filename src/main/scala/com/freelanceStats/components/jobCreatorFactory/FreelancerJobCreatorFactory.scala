@@ -37,7 +37,6 @@ class FreelancerJobCreatorFactory @Inject() (
               .map { job =>
                 val jobByteArray = Json.toBytes(job)
                 UnsavedRawJob(
-                  id = None,
                   sourceId = (job \ "id").as[Long].toString,
                   source = applicationConfiguration.source,
                   created = (job \ "time_submitted")

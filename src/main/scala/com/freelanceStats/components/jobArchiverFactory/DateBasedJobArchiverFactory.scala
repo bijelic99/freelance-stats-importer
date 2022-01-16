@@ -7,7 +7,6 @@ import com.freelanceStats.components.S3Client
 import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.s3Client.models.FileReference
 import org.apache.tika.config.TikaConfig
-import org.joda.time.DateTime
 import org.slf4j.LoggerFactory
 
 import javax.inject.Inject
@@ -27,7 +26,6 @@ class DateBasedJobArchiverFactory @Inject() (
     Flow[UnsavedRawJob]
       .flatMapConcat {
         case UnsavedRawJob(
-              id,
               sourceId,
               source,
               created,
@@ -48,6 +46,6 @@ class DateBasedJobArchiverFactory @Inject() (
           Source
             .single(futureFileReference -> data)
             .via(s3Client.putFlow)
-            .map(RawJob(id, sourceId, source, created, modified, _))
+            .map(RawJob(sourceId, source, created, modified, _))
       }
 }
