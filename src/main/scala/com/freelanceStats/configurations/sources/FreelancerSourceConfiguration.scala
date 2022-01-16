@@ -39,4 +39,8 @@ class FreelancerSourceConfiguration extends SourceConfiguration {
         case _ =>
           throw new Exception("Cant be infinite duration")
       }
+
+  val resultsPerPageLimit: Int =
+    configuration
+      .getInt("sources.freelancer.resultsPerPageLimit")
 }
