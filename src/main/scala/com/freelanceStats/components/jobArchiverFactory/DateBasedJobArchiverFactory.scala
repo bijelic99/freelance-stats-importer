@@ -1,5 +1,6 @@
 package com.freelanceStats.components.jobArchiverFactory
 
+import akka.event.{Logging, LoggingAdapter}
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Flow, Source}
 import com.freelanceStats.commons.models.{RawJob, UnsavedRawJob}
@@ -7,34 +8,40 @@ import com.freelanceStats.components.S3Client
 import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.s3Client.models.FileReference
 import org.apache.tika.config.TikaConfig
-import org.slf4j.LoggerFactory
+import org.joda.time.DateTime
 
 import javax.inject.Inject
 
 class DateBasedJobArchiverFactory @Inject() (
     s3Client: S3Client,
     applicationConfiguration: ApplicationConfiguration
-)(implicit
-    materializer: Materializer
-) extends JobArchiverFactory {
-
-  private val log = LoggerFactory.getLogger(getClass)
+)(override implicit val materializer: Materializer)
+    extends JobArchiverFactory {
 
   private val mimeTypes = TikaConfig.getDefaultConfig.getMimeRepository
 
+  val name: String = "job-archiver"
+
+  override implicit val log: LoggingAdapter =
+    Logging(materializer.system, getClass)
+
   override def create: Flow[UnsavedRawJob, RawJob, _] =
     Flow[UnsavedRawJob]
+      .log(
+        name,
+        { case UnsavedRawJob(sourceId, _, _, _, _) =>
+          s"Archiving job with $sourceId"
+        }
+      )
       .flatMapConcat {
         case UnsavedRawJob(
               sourceId,
               source,
-              created,
-              modified,
               contentType,
               contentSize,
               data
             ) =>
-          val createdDateStr = created.toString("dd-MM-yyyy")
+          val createdDateStr = DateTime.now().toString("dd-MM-yyyy")
           val futureFileReference =
             FileReference(
               bucket = applicationConfiguration.bucket,
@@ -46,6 +53,12 @@ class DateBasedJobArchiverFactory @Inject() (
           Source
             .single(futureFileReference -> data)
             .via(s3Client.putFlow)
-            .map(RawJob(sourceId, source, created, modified, _))
+            .map(RawJob(sourceId, source, _))
+            .log(
+              name,
+              { case RawJob(sourceId, _, _) =>
+                s"Archived job with $sourceId successfully"
+              }
+            )
       }
 }

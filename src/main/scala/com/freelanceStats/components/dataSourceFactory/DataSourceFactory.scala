@@ -1,12 +1,12 @@
 package com.freelanceStats.components.dataSourceFactory
 
 import akka.Done
+import akka.event.{Logging, LoggingAdapter}
 import akka.stream.Materializer
-import akka.stream.scaladsl.{Sink, Source, StreamConverters}
+import akka.stream.scaladsl.{Flow, Keep, Sink, Source, StreamConverters}
 import akka.util.ByteString
 import com.freelanceStats.commons.models.UnsavedRawJob
 import com.freelanceStats.configurations.sources.SourceConfiguration
-import com.freelanceStats.models.page.Page
 import com.freelanceStats.models.pageMetadata.ProgressMetadata
 import com.freelanceStats.s3Client.S3Client
 import play.api.libs.json.{Json, Reads, Writes}
@@ -22,6 +22,14 @@ trait DataSourceFactory[Metadata <: ProgressMetadata] {
   def s3Client: S3Client
 
   def configuration: SourceConfiguration
+
+  val name: String = "data-source"
+
+  implicit val log: LoggingAdapter =
+    Logging(
+      materializer.system,
+      "com.freelanceStats.components.dataSourceFactory.DataSourceFactory"
+    )
 
   protected def defaultPageMetadata: Metadata
 
@@ -39,15 +47,44 @@ trait DataSourceFactory[Metadata <: ProgressMetadata] {
       )
   }
 
+  protected def firstProgressMetadata()(implicit
+      reads: Reads[Metadata]
+  ): Source[Metadata, _] =
+    lastProgressMetadata()
+      .map {
+        case Some(lastPageMetadata) =>
+          lastPageMetadata
+        case None =>
+          defaultPageMetadata
+      }
+      .log(
+        name,
+        { metadata: Metadata =>
+          s"Using '$metadata' as firstProgressMetadata"
+        }
+      )
+
   def saveProgressMetadata()(implicit
       writes: Writes[Metadata]
-  ): Sink[Metadata, Future[Done]] = Sink.foreachAsync(1) { progressMetadata =>
-    val source =
-      Source.single(ByteString(Json.toBytes(Json.toJson(progressMetadata))))
-    s3Client
-      .put(configuration.lastPageMetadataFile, source)
-      .map(_ => ())
-  }
+  ): Sink[Metadata, Future[Done]] =
+    Flow[Metadata]
+      .log(
+        name,
+        { metadata =>
+          s"Saving '$metadata'"
+        }
+      )
+      .toMat {
+        Sink.foreachAsync(1) { progressMetadata =>
+          val source =
+            Source.single(
+              ByteString(Json.toBytes(Json.toJson(progressMetadata)))
+            )
+          s3Client
+            .put(configuration.lastPageMetadataFile, source)
+            .map(_ => ())
+        }
+      }(Keep.right)
 
   def create: Source[UnsavedRawJob, _]
 }

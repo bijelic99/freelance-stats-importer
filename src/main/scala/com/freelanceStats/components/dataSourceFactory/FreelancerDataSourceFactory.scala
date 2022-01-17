@@ -2,6 +2,7 @@ package com.freelanceStats.components.dataSourceFactory
 
 import akka.NotUsed
 import akka.actor.ActorSystem
+import akka.event.{Logging, LoggingAdapter}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
 import akka.stream.scaladsl.{
@@ -27,7 +28,6 @@ import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
 import com.freelanceStats.models.pageMetadata.FreelancerProgressMetadata
 import org.joda.time.DateTime
-import org.slf4j.LoggerFactory
 import play.api.libs.json.{JsObject, Json}
 
 import java.io.ByteArrayInputStream
@@ -35,7 +35,6 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
-import scala.util.chaining._
 
 class FreelancerDataSourceFactory @Inject() (
     override val s3Client: S3Client,
@@ -48,7 +47,10 @@ class FreelancerDataSourceFactory @Inject() (
 ) extends DataSourceFactory[FreelancerProgressMetadata] {
   import FreelancerProgressMetadata._
 
-  private val log = LoggerFactory.getLogger(getClass)
+  override val name: String = "freelancer-data-source"
+
+  override implicit val log: LoggingAdapter =
+    Logging(materializer.system, getClass)
 
   protected override def defaultPageMetadata: FreelancerProgressMetadata =
     FreelancerProgressMetadata.apply(
@@ -68,15 +70,7 @@ class FreelancerDataSourceFactory @Inject() (
       GraphDSL.create() { implicit builder =>
         import GraphDSL.Implicits._
 
-        val firstProgressMetadataSource = builder.add(
-          lastProgressMetadata()
-            .map {
-              case Some(lastPageMetadata) =>
-                lastPageMetadata
-              case None =>
-                defaultPageMetadata
-            }
-        )
+        val firstProgressMetadataSource = builder.add(firstProgressMetadata())
         val fetchProjectIdentifiersFlow =
           builder.add(getActiveProjectsPageMetadata)
 
@@ -142,6 +136,12 @@ class FreelancerDataSourceFactory @Inject() (
   private lazy val getActiveProjectsPageMetadata
       : Flow[FreelancerProgressMetadata, ActiveProjectsFetchResults, _] =
     Flow[FreelancerProgressMetadata]
+      .log(
+        name,
+        { metadata =>
+          s"Fetching job id's for '$metadata'"
+        }
+      )
       .map { metadata =>
         val fetchFromSeconds =
           TimeUnit.MILLISECONDS.toSeconds(metadata.fetchFrom.getMillis)
@@ -181,10 +181,16 @@ class FreelancerDataSourceFactory @Inject() (
           log.error(message, throwable)
           throw new Exception(message, throwable)
       }
+      .log(
+        name,
+        { case (_, resultListEmpty) =>
+          s"Fetched jobs, resultListEmpty = $resultListEmpty"
+        }
+      )
 
   private lazy val nextJobFetchParameterFlow: Flow[
     (ResultListEmpty, LastFreelancerProgressMetadata),
-    LastFreelancerProgressMetadata,
+    FreelancerProgressMetadata,
     NotUsed
   ] =
     Flow[(ResultListEmpty, LastFreelancerProgressMetadata)]
@@ -196,11 +202,23 @@ class FreelancerDataSourceFactory @Inject() (
           lastMetadata
             .incrementResultOffset(configuration.resultsPerPageLimit)
       }
+      .log(
+        name,
+        { metadata =>
+          s"Created next progressMetadata: '$metadata'"
+        }
+      )
 
   private lazy val jobFetchPool = Http().superPool[JobIdentifier]()
 
   private lazy val fetchJobFlow: Flow[JobIdentifier, UnsavedRawJob, NotUsed] =
     Flow[JobIdentifier]
+      .log(
+        name,
+        { jobIdentifier =>
+          s"Fetching job with id: '$jobIdentifier'"
+        }
+      )
       .map { identifier =>
         val params = Seq(
           "compact=true",
@@ -220,32 +238,20 @@ class FreelancerDataSourceFactory @Inject() (
       }
       .via(jobFetchPool)
       .map {
-        case (Success(response), _) if response.status.isSuccess() =>
-          val body = Json.parse(
-            response.entity.dataBytes.runWith(StreamConverters.asInputStream())
-          )
-          val job =
-            (body \ "result")
-              .as[JsObject]
-          val jobByteArray = Json.toBytes(job)
-          val createdDateTime = (job \ "time_submitted")
-            .as[Long]
-            .pipe(s => new DateTime(TimeUnit.SECONDS.toMillis(s)))
-          val modifiedDateTime = (job \ "time_updated")
-            .asOpt[Long]
-            .map(s => new DateTime(TimeUnit.SECONDS.toMillis(s)))
-            .getOrElse(createdDateTime)
+        case (Success(response), identifier) if response.status.isSuccess() =>
+          lazy val byteArray =
+            response.entity.dataBytes
+              .runWith(StreamConverters.asInputStream())
+              .readAllBytes()
           UnsavedRawJob(
-            sourceId = (job \ "id").as[Long].toString,
+            sourceId = identifier,
             source = applicationConfiguration.source,
-            created = createdDateTime,
-            modified = modifiedDateTime,
-            data = StreamConverters
-              .fromInputStream(() =>
-                new ByteArrayInputStream(Json.toBytes(job))
-              ),
-            contentType = "application/json",
-            contentSize = jobByteArray.length
+            data = StreamConverters.fromInputStream(() =>
+              new ByteArrayInputStream(byteArray)
+            ),
+            contentType = response.entity.contentType.toString(),
+            contentSize =
+              response.entity.contentLengthOption.getOrElse(byteArray.length)
           )
         case (Success(response), identifier) =>
           val message =
@@ -258,6 +264,12 @@ class FreelancerDataSourceFactory @Inject() (
           log.error(message, throwable)
           throw new Exception(message, throwable)
       }
+      .log(
+        name,
+        { case UnsavedRawJob(sourceId, _, _, _, _) =>
+          s"Fetched job with id: '$sourceId'"
+        }
+      )
 }
 
 object FreelancerDataSourceFactory {
