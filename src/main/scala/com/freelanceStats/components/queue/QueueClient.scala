@@ -1,6 +1,7 @@
 package com.freelanceStats.components.queue
 
 import akka.stream.Materializer
+import akka.stream.alpakka.amqp.AmqpUriConnectionProvider
 import akka.util.ByteString
 import com.freelanceStats.alpakkaRabbitMQClient.AlpakkaRabbitMQConsumer
 import com.freelanceStats.alpakkaRabbitMQClient.elementConverter.ElementToByteStringConverter
@@ -15,7 +16,7 @@ import javax.inject.{Inject, Singleton}
 @Singleton
 class QueueClient @Inject() (
     override val configuration: AlpakkaRabbitMQClientConfiguration,
-    override val connectionProviderFactory: UriConnectionProviderFactory
+    override val amqpConnectionProvider: AmqpUriConnectionProvider
 )(
     override implicit val materializer: Materializer
 ) extends AlpakkaRabbitMQConsumer[RawJob] {
