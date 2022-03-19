@@ -1,18 +1,18 @@
-package com.freelanceStats.components.jobArchiverFactory
+package com.freelanceStats.components.jobArchiver
 
 import akka.event.{Logging, LoggingAdapter}
 import akka.stream.Materializer
 import akka.stream.scaladsl.Flow
 import com.freelanceStats.commons.models.{RawJob, UnsavedRawJob}
 
-trait JobArchiverFactory {
+trait JobArchiver {
 
   def materializer: Materializer
 
   implicit val log: LoggingAdapter = Logging(
     materializer.system,
-    "com.freelanceStats.components.jobArchiverFactory.JobArchiverFactory"
+    "com.freelanceStats.components.jobArchiver.JobArchiver"
   )
 
-  def create: Flow[UnsavedRawJob, RawJob, _]
+  def apply(): Flow[UnsavedRawJob, RawJob, _]
 }

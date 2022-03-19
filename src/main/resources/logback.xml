@@ -16,11 +16,11 @@
 
 
 
-    <logger name="com.freelanceStats.components.dataSourceFactory" level="info">
+    <logger name="com.freelanceStats.components.dataSource" level="info">
         <appender-ref ref="STDOUT"/>
     </logger>
 
-    <logger name="com.freelanceStats.components.jobArchiverFactory" level="info">
+    <logger name="com.freelanceStats.components.jobArchiver" level="info">
         <appender-ref ref="STDOUT"/>
     </logger>
 

@@ -4,8 +4,8 @@ import akka.Done
 import akka.actor.ActorSystem
 import akka.stream.scaladsl.{Keep, RunnableGraph}
 import akka.stream.{KillSwitch, KillSwitches, Materializer}
-import com.freelanceStats.components.dataSourceFactory.DataSourceFactory
-import com.freelanceStats.components.jobArchiverFactory.JobArchiverFactory
+import com.freelanceStats.components.dataSource.DataSource
+import com.freelanceStats.components.jobArchiver.JobArchiver
 import com.freelanceStats.components.queue.QueueClient
 import com.freelanceStats.models.pageMetadata.ProgressMetadata
 
@@ -15,8 +15,8 @@ import scala.concurrent.{ExecutionContext, Future}
 
 @Singleton
 class StreamMaintainer @Inject() (
-    dataSourceFactory: DataSourceFactory[ProgressMetadata],
-    jobArchiverFactory: JobArchiverFactory,
+    dataSource: DataSource[ProgressMetadata],
+    jobArchiver: JobArchiver,
     queueClient: QueueClient
 )(
     override implicit val executionContext: ExecutionContext,
@@ -26,13 +26,9 @@ class StreamMaintainer @Inject() (
   override implicit val materializer: Materializer = Materializer.matFromSystem
   override implicit val timeout: FiniteDuration = 1.minute
 
-  private val source = dataSourceFactory.create
-  private val jobArchiver = jobArchiverFactory.create
-  private val sink = queueClient.sink
-
   override val runnableGraph: RunnableGraph[(KillSwitch, Future[Done])] =
-    source
+    dataSource()
       .viaMat(KillSwitches.single)(Keep.right)
-      .via(jobArchiver)
-      .toMat(sink)(Keep.both)
+      .via(jobArchiver())
+      .toMat(queueClient.sink)(Keep.both)
 }

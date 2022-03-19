@@ -1,4 +1,4 @@
-package com.freelanceStats.components.dataSourceFactory
+package com.freelanceStats.components.dataSource
 
 import akka.Done
 import akka.event.{Logging, LoggingAdapter}
@@ -13,7 +13,7 @@ import play.api.libs.json.{Json, Reads, Writes}
 
 import scala.concurrent.{ExecutionContext, Future}
 
-trait DataSourceFactory[Metadata <: ProgressMetadata] {
+trait DataSource[Metadata <: ProgressMetadata] {
 
   implicit val executionContext: ExecutionContext
 
@@ -28,7 +28,7 @@ trait DataSourceFactory[Metadata <: ProgressMetadata] {
   implicit val log: LoggingAdapter =
     Logging(
       materializer.system,
-      "com.freelanceStats.components.dataSourceFactory.DataSourceFactory"
+      "com.freelanceStats.components.dataSource.DataSource"
     )
 
   protected def defaultPageMetadata: Metadata
@@ -86,5 +86,5 @@ trait DataSourceFactory[Metadata <: ProgressMetadata] {
         }
       }(Keep.right)
 
-  def create: Source[UnsavedRawJob, _]
+  def apply(): Source[UnsavedRawJob, _]
 }

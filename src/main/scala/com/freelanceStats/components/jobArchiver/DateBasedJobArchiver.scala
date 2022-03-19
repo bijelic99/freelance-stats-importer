@@ -1,4 +1,4 @@
-package com.freelanceStats.components.jobArchiverFactory
+package com.freelanceStats.components.jobArchiver
 
 import akka.event.{Logging, LoggingAdapter}
 import akka.stream.Materializer
@@ -12,11 +12,11 @@ import org.joda.time.DateTime
 
 import javax.inject.Inject
 
-class DateBasedJobArchiverFactory @Inject() (
+class DateBasedJobArchiver @Inject() (
     s3Client: S3Client,
     applicationConfiguration: ApplicationConfiguration
 )(override implicit val materializer: Materializer)
-    extends JobArchiverFactory {
+    extends JobArchiver {
 
   private val mimeTypes = TikaConfig.getDefaultConfig.getMimeRepository
 
@@ -25,7 +25,7 @@ class DateBasedJobArchiverFactory @Inject() (
   override implicit val log: LoggingAdapter =
     Logging(materializer.system, getClass)
 
-  override def create: Flow[UnsavedRawJob, RawJob, _] =
+  override def apply(): Flow[UnsavedRawJob, RawJob, _] =
     Flow[UnsavedRawJob]
       .log(
         name,

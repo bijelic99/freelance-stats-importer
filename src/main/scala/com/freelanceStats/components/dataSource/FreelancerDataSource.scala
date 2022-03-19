@@ -1,4 +1,4 @@
-package com.freelanceStats.components.dataSourceFactory
+package com.freelanceStats.components.dataSource
 
 import akka.NotUsed
 import akka.actor.ActorSystem
@@ -18,7 +18,7 @@ import akka.stream.scaladsl.{
 import akka.stream.{Materializer, SourceShape}
 import com.freelanceStats.commons.models.UnsavedRawJob
 import com.freelanceStats.components.S3Client
-import com.freelanceStats.components.dataSourceFactory.FreelancerDataSourceFactory.{
+import com.freelanceStats.components.dataSource.FreelancerDataSource.{
   ActiveProjectsFetchResults,
   JobIdentifier,
   LastFreelancerProgressMetadata,
@@ -36,7 +36,7 @@ import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
-class FreelancerDataSourceFactory @Inject() (
+class FreelancerDataSource @Inject() (
     override val s3Client: S3Client,
     override val configuration: FreelancerSourceConfiguration,
     applicationConfiguration: ApplicationConfiguration
@@ -44,7 +44,7 @@ class FreelancerDataSourceFactory @Inject() (
     implicit val actorSystem: ActorSystem,
     override implicit val executionContext: ExecutionContext,
     override implicit val materializer: Materializer
-) extends DataSourceFactory[FreelancerProgressMetadata] {
+) extends DataSource[FreelancerProgressMetadata] {
   import FreelancerProgressMetadata._
 
   override val name: String = "freelancer-data-source"
@@ -58,7 +58,7 @@ class FreelancerDataSourceFactory @Inject() (
       fetchTo = DateTime.now()
     )
 
-  override def create: Source[UnsavedRawJob, _] =
+  override def apply(): Source[UnsavedRawJob, _] =
     jobIdentifierSource
       .flatMapConcat { jobIdentifierSource =>
         jobIdentifierSource
@@ -272,7 +272,7 @@ class FreelancerDataSourceFactory @Inject() (
       )
 }
 
-object FreelancerDataSourceFactory {
+object FreelancerDataSource {
   type JobIdentifier = String
   type ResultListEmpty = Boolean
   type LastFreelancerProgressMetadata = FreelancerProgressMetadata

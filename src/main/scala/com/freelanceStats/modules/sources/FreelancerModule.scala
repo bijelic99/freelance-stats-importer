@@ -3,13 +3,13 @@ package com.freelanceStats.modules.sources
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 import com.freelanceStats.components.S3Client
-import com.freelanceStats.components.dataSourceFactory.{
-  DataSourceFactory,
-  FreelancerDataSourceFactory
+import com.freelanceStats.components.dataSource.{
+  DataSource,
+  FreelancerDataSource
 }
-import com.freelanceStats.components.jobArchiverFactory.{
-  DateBasedJobArchiverFactory,
-  JobArchiverFactory
+import com.freelanceStats.components.jobArchiver.{
+  DateBasedJobArchiver,
+  JobArchiver
 }
 import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
@@ -22,7 +22,7 @@ import scala.concurrent.ExecutionContext
 class FreelancerModule extends AbstractModule {
   @Provides
   @Singleton
-  def dataSourceFactoryProvider(
+  def dataSourceProvider(
       s3Client: S3Client,
       configuration: FreelancerSourceConfiguration,
       applicationConfiguration: ApplicationConfiguration
@@ -30,20 +30,20 @@ class FreelancerModule extends AbstractModule {
       actorSystem: ActorSystem,
       executionContext: ExecutionContext,
       materializer: Materializer
-  ): DataSourceFactory[ProgressMetadata] =
-    new FreelancerDataSourceFactory(
+  ): DataSource[ProgressMetadata] =
+    new FreelancerDataSource(
       s3Client,
       configuration,
       applicationConfiguration
-    ).asInstanceOf[DataSourceFactory[ProgressMetadata]]
+    ).asInstanceOf[DataSource[ProgressMetadata]]
 
   @Provides
   @Singleton
-  def jobArchiverFactoryProvider(
+  def jobArchiverProvider(
       s3Client: S3Client,
       applicationConfiguration: ApplicationConfiguration
   )(implicit
       materializer: Materializer
-  ): JobArchiverFactory =
-    new DateBasedJobArchiverFactory(s3Client, applicationConfiguration)
+  ): JobArchiver =
+    new DateBasedJobArchiver(s3Client, applicationConfiguration)
 }
