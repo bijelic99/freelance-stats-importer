@@ -159,7 +159,8 @@ class FreelancerDataSource @Inject() (
       .via(idExtractFlow)
       .scan(ParsedRssFeed()) {
         case (ParsedRssFeed(lastBatch, _, _), currentBatch) =>
-          val diff = currentBatch.filterNot(lastBatch.contains)
+          val diff =
+            currentBatch.filterNot(id => lastBatch.exists(_.equals(id)))
           ParsedRssFeed(currentBatch, diff, currentBatch.size - diff.size)
       }
       .throttle(
