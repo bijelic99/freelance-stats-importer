@@ -14,7 +14,6 @@ import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
 import java.io.ByteArrayInputStream
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success, Try}
 import scala.xml.{Elem, XML}
 
@@ -42,7 +41,20 @@ class FreelancerDataSource @Inject() (
       .withAttributes(Attributes.logLevels(onElement = Logging.ErrorLevel))
       .to(Sink.ignore)
 
-  private def rssFeedSource: Source[Elem, NotUsed] =
+  private lazy val idExtractRegex = """^.+_(\d+)$""".r //"""_(\d+)$""".r
+
+  private def idExtractFlow: Flow[Elem, Seq[String], NotUsed] =
+    Flow[Elem]
+      .map { feed =>
+        (feed \\ "item")
+          .map(_ \ "guid")
+          .map(_.text)
+          .collect { case idExtractRegex(id) =>
+            id
+          }
+      }
+
+  private def rssFeedIdSource: Source[Seq[String], NotUsed] =
     Source
       .repeat(NotUsed)
       .map(
@@ -76,19 +88,7 @@ class FreelancerDataSource @Inject() (
       .collect { case Success(elem) =>
         elem
       }
-
-  private lazy val idExtractRegex = """^.+_(\d+)$""".r //"""_(\d+)$""".r
-
-  private def idExtractFlow: Flow[Elem, Seq[String], NotUsed] =
-    Flow[Elem]
-      .map { feed =>
-        (feed \\ "item")
-          .map(_ \ "guid")
-          .map(_.text)
-          .collect { case idExtractRegex(id) =>
-            id
-          }
-      }
+      .via(idExtractFlow)
 
   private lazy val jobFetchConnectionPool =
     Http().superPool[String]()
@@ -155,8 +155,7 @@ class FreelancerDataSource @Inject() (
       }
 
   override def apply(): Source[UnsavedRawJob, _] =
-    rssFeedSource
-      .via(idExtractFlow)
+    rssFeedIdSource
       .scan(ParsedRssFeed()) {
         case (ParsedRssFeed(lastBatch, _, _), currentBatch) =>
           val diff =
@@ -167,6 +166,12 @@ class FreelancerDataSource @Inject() (
         configuration.sourceThrottleMaxCost,
         configuration.sourceThrottlePer,
         _.numberOfDuplicates
+      )
+      .log(
+        "freelancer-data-source",
+        { parsedFeed =>
+          s"Fetching ${parsedFeed.difference.size} jobs"
+        }
       )
       .flatMapConcat(feed => Source(feed.difference))
       .via(jobFetchFlow)
