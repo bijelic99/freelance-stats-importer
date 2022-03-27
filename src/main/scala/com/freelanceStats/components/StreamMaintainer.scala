@@ -7,7 +7,6 @@ import akka.stream.{KillSwitch, KillSwitches, Materializer}
 import com.freelanceStats.components.dataSource.DataSource
 import com.freelanceStats.components.jobArchiver.JobArchiver
 import com.freelanceStats.components.queue.QueueClient
-import com.freelanceStats.models.pageMetadata.ProgressMetadata
 
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -15,7 +14,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 @Singleton
 class StreamMaintainer @Inject() (
-    dataSource: DataSource[ProgressMetadata],
+    dataSource: DataSource,
     jobArchiver: JobArchiver,
     queueClient: QueueClient
 )(

@@ -13,7 +13,6 @@ import com.freelanceStats.components.jobArchiver.{
 }
 import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
-import com.freelanceStats.models.pageMetadata.ProgressMetadata
 import com.google.inject.{AbstractModule, Provides}
 
 import javax.inject.Singleton
@@ -23,19 +22,17 @@ class FreelancerModule extends AbstractModule {
   @Provides
   @Singleton
   def dataSourceProvider(
-      s3Client: S3Client,
       configuration: FreelancerSourceConfiguration,
       applicationConfiguration: ApplicationConfiguration
   )(implicit
       actorSystem: ActorSystem,
       executionContext: ExecutionContext,
       materializer: Materializer
-  ): DataSource[ProgressMetadata] =
+  ): DataSource =
     new FreelancerDataSource(
-      s3Client,
       configuration,
       applicationConfiguration
-    ).asInstanceOf[DataSource[ProgressMetadata]]
+    )
 
   @Provides
   @Singleton

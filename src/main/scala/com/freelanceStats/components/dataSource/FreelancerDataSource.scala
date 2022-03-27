@@ -1,280 +1,180 @@
 package com.freelanceStats.components.dataSource
-
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.event.{Logging, LoggingAdapter}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
-import akka.stream.scaladsl.{
-  Broadcast,
-  Flow,
-  GraphDSL,
-  Merge,
-  Source,
-  StreamConverters,
-  Unzip,
-  Zip
-}
-import akka.stream.{Materializer, SourceShape}
+import akka.stream.scaladsl.{Flow, Sink, Source, StreamConverters}
+import akka.stream.{Attributes, Materializer}
 import com.freelanceStats.commons.models.UnsavedRawJob
-import com.freelanceStats.components.S3Client
-import com.freelanceStats.components.dataSource.FreelancerDataSource.{
-  ActiveProjectsFetchResults,
-  JobIdentifier,
-  LastFreelancerProgressMetadata,
-  ResultListEmpty
-}
+import com.freelanceStats.components.dataSource.FreelancerDataSource.ParsedRssFeed
 import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
-import com.freelanceStats.models.pageMetadata.FreelancerProgressMetadata
-import org.joda.time.DateTime
-import play.api.libs.json.{JsObject, Json}
 
 import java.io.ByteArrayInputStream
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import scala.concurrent.ExecutionContext
-import scala.util.{Failure, Success}
+import scala.concurrent.duration.DurationInt
+import scala.util.{Failure, Success, Try}
+import scala.xml.{Elem, XML}
 
 class FreelancerDataSource @Inject() (
-    override val s3Client: S3Client,
-    override val configuration: FreelancerSourceConfiguration,
+    val configuration: FreelancerSourceConfiguration,
     applicationConfiguration: ApplicationConfiguration
 )(
     implicit val actorSystem: ActorSystem,
-    override implicit val executionContext: ExecutionContext,
-    override implicit val materializer: Materializer
-) extends DataSource[FreelancerProgressMetadata] {
-  import FreelancerProgressMetadata._
+    implicit val executionContext: ExecutionContext,
+    implicit val materializer: Materializer
+) extends DataSource {
 
-  override val name: String = "freelancer-data-source"
-
-  override implicit val log: LoggingAdapter =
+  implicit val log: LoggingAdapter =
     Logging(materializer.system, getClass)
 
-  protected override def defaultPageMetadata: FreelancerProgressMetadata =
-    FreelancerProgressMetadata.apply(
-      fetchFrom = DateTime.now(),
-      fetchTo = DateTime.now()
-    )
+  private lazy val rssFeedConnectionPool =
+    Http().superPool[NotUsed]()
 
-  override def apply(): Source[UnsavedRawJob, _] =
-    jobIdentifierSource
-      .flatMapConcat { jobIdentifierSource =>
-        jobIdentifierSource
-          .via(fetchJobFlow)
+  private def rssFeedFetchErrorSink: Sink[Try[Elem], NotUsed] =
+    Flow[Try[Elem]]
+      .collect { case Failure(exception) =>
+        exception
       }
+      .log("rss-feed-error")
+      .withAttributes(Attributes.logLevels(onElement = Logging.ErrorLevel))
+      .to(Sink.ignore)
 
-  private lazy val jobIdentifierSource: Source[Source[JobIdentifier, _], _] =
-    Source.fromGraph {
-      GraphDSL.create() { implicit builder =>
-        import GraphDSL.Implicits._
-
-        val firstProgressMetadataSource = builder.add(firstProgressMetadata())
-        val fetchProjectIdentifiersFlow =
-          builder.add(getActiveProjectsPageMetadata)
-
-        val _nextJobFetchParameterFlow = builder.add(nextJobFetchParameterFlow)
-
-        val saveProgressMetadataSink = builder.add(
-          Flow[(ResultListEmpty, LastFreelancerProgressMetadata)]
-            .map(_._2)
-            .to(saveProgressMetadata())
-        )
-
-        val throttle = builder.add(
-          Flow[(ResultListEmpty, LastFreelancerProgressMetadata)]
-            .throttle(1, configuration.frequency)
-        )
-
-        val progressMetadataMerge =
-          builder.add(Merge[FreelancerProgressMetadata](2))
-
-        val metadataBroadcast =
-          builder.add(Broadcast[FreelancerProgressMetadata](2))
-
-        val metadataUnzip = builder.add(
-          Unzip[Source[JobIdentifier, _], ResultListEmpty]()
-        )
-
-        val metadataZip =
-          builder.add(Zip[ResultListEmpty, LastFreelancerProgressMetadata])
-
-        val zippedMetadataBroadcast = builder.add(
-          Broadcast[(ResultListEmpty, LastFreelancerProgressMetadata)](2)
-        )
-
-        firstProgressMetadataSource.out ~> progressMetadataMerge.in(0)
-
-        progressMetadataMerge.out ~> metadataBroadcast.in
-
-        metadataBroadcast.out(0) ~> fetchProjectIdentifiersFlow.in
-
-        fetchProjectIdentifiersFlow.out ~> metadataUnzip.in
-
-        metadataUnzip.out1 ~> metadataZip.in0
-
-        metadataBroadcast ~> metadataZip.in1
-
-        metadataZip.out ~> zippedMetadataBroadcast.in
-
-        zippedMetadataBroadcast.out(0) ~> throttle.in
-
-        zippedMetadataBroadcast.out(1) ~> saveProgressMetadataSink.in
-
-        throttle.out ~> _nextJobFetchParameterFlow.in
-
-        _nextJobFetchParameterFlow.out ~> progressMetadataMerge.in(1)
-
-        SourceShape(metadataUnzip.out0)
-      }
-    }
-
-  private lazy val activeProjectsFetchPool =
-    Http().superPool[FreelancerProgressMetadata]()
-
-  private lazy val getActiveProjectsPageMetadata
-      : Flow[FreelancerProgressMetadata, ActiveProjectsFetchResults, _] =
-    Flow[FreelancerProgressMetadata]
-      .log(
-        name,
-        { metadata =>
-          s"Fetching job id's for '$metadata'"
-        }
-      )
-      .map { metadata =>
-        val fetchFromSeconds =
-          TimeUnit.MILLISECONDS.toSeconds(metadata.fetchFrom.getMillis)
-        val fetchToSeconds =
-          TimeUnit.MILLISECONDS.toSeconds(metadata.fetchTo.getMillis)
-        val params = Seq(
-          "compact=true",
-          s"limit=${configuration.resultsPerPageLimit}",
-          s"offset=${metadata.offset}",
-          s"from_time=$fetchFromSeconds",
-          s"to_time=$fetchToSeconds"
-        ).mkString("?", "&", "")
+  private def rssFeedSource: Source[Elem, NotUsed] =
+    Source
+      .repeat(NotUsed)
+      .map(
         HttpRequest(
           method = HttpMethods.GET,
-          uri = s"${configuration.url}/api/projects/0.1/projects/active$params"
-        ) -> metadata
-      }
-      .via(activeProjectsFetchPool)
+          uri = s"${configuration.url}/rss.xml"
+        ) -> _
+      )
+      .via(rssFeedConnectionPool)
       .map {
         case (Success(response), _) if response.status.isSuccess() =>
-          val body = Json.parse(
-            response.entity.dataBytes.runWith(StreamConverters.asInputStream())
+          Success(
+            XML.load(
+              response.entity.dataBytes
+                .runWith(StreamConverters.asInputStream())
+            )
           )
-          val projects =
-            (body \ "result" \ "projects")
-              .as[Seq[JsObject]]
-          val identifiers = projects
-            .map(_.\("id").as[Long].toString)
-          Source(identifiers) -> identifiers.isEmpty
-        case (Success(response), metadata) =>
-          val message =
-            s"Received response with code ${response.status} for '$metadata'"
-          log.error(message)
-          throw new Exception(message)
-        case (Failure(throwable), metadata) =>
-          val message = s"Failed to receive response for '$metadata'"
-          log.error(message, throwable)
-          throw new Exception(message, throwable)
+        case (Success(response), _) =>
+          Failure(
+            new Exception(
+              s"Rss feed returned non 200 status code: '${response.status}'"
+            )
+          )
+        case (Failure(exception), _) =>
+          Failure(exception)
       }
-      .log(
-        name,
-        { case (_, resultListEmpty) =>
-          s"Fetched jobs, resultListEmpty = $resultListEmpty"
-        }
+      .divertTo(
+        rssFeedFetchErrorSink,
+        _.isFailure
       )
-
-  private lazy val nextJobFetchParameterFlow: Flow[
-    (ResultListEmpty, LastFreelancerProgressMetadata),
-    FreelancerProgressMetadata,
-    NotUsed
-  ] =
-    Flow[(ResultListEmpty, LastFreelancerProgressMetadata)]
-      .map {
-        case (true, lastMetadata) =>
-          lastMetadata
-            .createNextProgressMetadata(configuration.maxFetchOffset)
-        case (false, lastMetadata) =>
-          lastMetadata
-            .incrementResultOffset(configuration.resultsPerPageLimit)
+      .collect { case Success(elem) =>
+        elem
       }
-      .log(
-        name,
-        { metadata =>
-          s"Created next progressMetadata: '$metadata'"
-        }
-      )
 
-  private lazy val jobFetchPool = Http().superPool[JobIdentifier]()
+  private lazy val idExtractRegex = """^.+_(\d+)$""".r //"""_(\d+)$""".r
 
-  private lazy val fetchJobFlow: Flow[JobIdentifier, UnsavedRawJob, NotUsed] =
-    Flow[JobIdentifier]
-      .log(
-        name,
-        { jobIdentifier =>
-          s"Fetching job with id: '$jobIdentifier'"
-        }
-      )
-      .map { identifier =>
-        val params = Seq(
-          "compact=true",
-          "full_description=true",
-          "job_details=true",
-          "qualification_details=true",
-          "user_details=true",
-          "location_details=true",
-          "user_country_details=true",
-          "user_location_details=true"
-        ).mkString("?", "&", "")
+  private def idExtractFlow: Flow[Elem, Seq[String], NotUsed] =
+    Flow[Elem]
+      .map { feed =>
+        (feed \\ "item")
+          .map(_ \ "guid")
+          .map(_.text)
+          .collect { case idExtractRegex(id) =>
+            id
+          }
+      }
+
+  private lazy val jobFetchConnectionPool =
+    Http().superPool[String]()
+
+  val jobFetchParams: String =
+    Seq(
+      "compact=true",
+      "full_description=true",
+      "job_details=true",
+      "qualification_details=true",
+      "user_details=true",
+      "location_details=true",
+      "user_country_details=true",
+      "user_location_details=true"
+    ).mkString("?", "&", "")
+
+  private def jobFetchErrorSink =
+    Flow[(Try[UnsavedRawJob], String)]
+      .collect { case (Failure(exception), id) =>
+        new Exception(s"Error while processing '$id'", exception)
+      }
+      .log("job-fetch-error")
+      .withAttributes(Attributes.logLevels(onElement = Logging.ErrorLevel))
+      .to(Sink.ignore)
+
+  private def jobFetchFlow: Flow[String, UnsavedRawJob, NotUsed] =
+    Flow[String]
+      .map { id =>
         HttpRequest(
           method = HttpMethods.GET,
           uri =
-            s"${configuration.url}/api/projects/0.1/projects/$identifier$params"
-        ) -> identifier
+            s"${configuration.url}/api/projects/0.1/projects/$id$jobFetchParams"
+        ) -> id
       }
-      .via(jobFetchPool)
+      .via(jobFetchConnectionPool)
       .map {
-        case (Success(response), identifier) if response.status.isSuccess() =>
-          lazy val byteArray =
-            response.entity.dataBytes
-              .runWith(StreamConverters.asInputStream())
-              .readAllBytes()
-          UnsavedRawJob(
-            sourceId = identifier,
-            source = applicationConfiguration.source,
-            data = StreamConverters.fromInputStream(() =>
-              new ByteArrayInputStream(byteArray)
-            ),
-            contentType = response.entity.contentType.toString(),
-            contentSize =
-              response.entity.contentLengthOption.getOrElse(byteArray.length)
-          )
-        case (Success(response), identifier) =>
-          val message =
-            s"Received response with code ${response.status} for job with id: '$identifier'"
-          log.error(message)
-          throw new Exception(message)
-        case (Failure(throwable), identifier) =>
-          val message =
-            s"Failed to receive response for job with id: '$identifier'"
-          log.error(message, throwable)
-          throw new Exception(message, throwable)
+        case (Success(response), id) if response.status.isSuccess() =>
+          val byteArray = response.entity.dataBytes
+            .runWith(StreamConverters.asInputStream())
+            .readAllBytes()
+          Success(
+            UnsavedRawJob(
+              sourceId = id,
+              source = applicationConfiguration.source,
+              data = StreamConverters
+                .fromInputStream(() => new ByteArrayInputStream(byteArray)),
+              contentType = response.entity.contentType.toString(),
+              contentSize =
+                response.entity.contentLengthOption.getOrElse(byteArray.length)
+            )
+          ) -> id
+        case (Success(response), id) =>
+          Failure(
+            new Exception(
+              s"Api returned non 200 status code: '${response.status}'"
+            )
+          ) -> id
+        case (Failure(throwable), id) =>
+          Failure(throwable) -> id
       }
-      .log(
-        name,
-        { case UnsavedRawJob(sourceId, _, _, _, _) =>
-          s"Fetched job with id: '$sourceId'"
-        }
+      .divertTo(jobFetchErrorSink, _._1.isFailure)
+      .collect { case (Success(job), _) =>
+        job
+      }
+
+  override def apply(): Source[UnsavedRawJob, _] =
+    rssFeedSource
+      .via(idExtractFlow)
+      .scan(ParsedRssFeed()) {
+        case (ParsedRssFeed(lastBatch, _, _), currentBatch) =>
+          val diff = currentBatch.filterNot(lastBatch.contains)
+          ParsedRssFeed(currentBatch, diff, currentBatch.size - diff.size)
+      }
+      .throttle(
+        configuration.sourceThrottleMaxCost,
+        configuration.sourceThrottlePer,
+        _.numberOfDuplicates
       )
+      .flatMapConcat(feed => Source(feed.difference))
+      .via(jobFetchFlow)
 }
 
 object FreelancerDataSource {
-  type JobIdentifier = String
-  type ResultListEmpty = Boolean
-  type LastFreelancerProgressMetadata = FreelancerProgressMetadata
-  type ActiveProjectsFetchResults = (Source[JobIdentifier, _], ResultListEmpty)
+  case class ParsedRssFeed(
+      lastBatch: Seq[String] = Nil,
+      difference: Seq[String] = Nil,
+      numberOfDuplicates: Int = 0
+  )
 }

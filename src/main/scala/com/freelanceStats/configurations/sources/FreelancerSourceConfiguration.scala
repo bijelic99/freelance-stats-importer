@@ -7,31 +7,21 @@ import org.joda.time.Period
 import scala.concurrent.duration.{FiniteDuration, Duration => ScalaDuration}
 import scala.util.chaining._
 
-class FreelancerSourceConfiguration extends SourceConfiguration {
+class FreelancerSourceConfiguration {
 
   private val configuration = ConfigFactory.load()
-
-  override val lastPageMetadataFile: FileReference = {
-    val fileReferenceConfiguration =
-      configuration.getConfig("sources.freelancer.lastPageMetadataFile")
-    FileReference(
-      bucket = fileReferenceConfiguration.getString("bucket"),
-      key = fileReferenceConfiguration.getString("key")
-    )
-  }
-
-  val maxFetchOffset: Period =
-    configuration
-      .getString("sources.freelancer.maxFetchOffset")
-      .pipe(Period.parse)
 
   val url: String =
     configuration
       .getString("sources.freelancer.url")
 
-  val frequency: FiniteDuration =
+  val sourceThrottleMaxCost: Int =
     configuration
-      .getString("sources.freelancer.frequency")
+      .getInt("sources.freelancer.sourceThrottle.maxCost")
+
+  val sourceThrottlePer: FiniteDuration =
+    configuration
+      .getString("sources.freelancer.sourceThrottle.per")
       .pipe(ScalaDuration.create)
       .pipe {
         case duration: FiniteDuration =>
@@ -39,8 +29,4 @@ class FreelancerSourceConfiguration extends SourceConfiguration {
         case _ =>
           throw new Exception("Cant be infinite duration")
       }
-
-  val resultsPerPageLimit: Int =
-    configuration
-      .getInt("sources.freelancer.resultsPerPageLimit")
 }
