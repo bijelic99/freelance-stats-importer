@@ -10,6 +10,7 @@ import com.freelanceStats.commons.models.UnsavedRawJob
 import com.freelanceStats.components.dataSource.FreelancerDataSource.ParsedRssFeed
 import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
+import org.apache.commons.lang3.exception.ExceptionUtils
 
 import java.io.ByteArrayInputStream
 import javax.inject.Inject
@@ -35,7 +36,7 @@ class FreelancerDataSource @Inject() (
   private def rssFeedFetchErrorSink: Sink[Try[Elem], NotUsed] =
     Flow[Try[Elem]]
       .collect { case Failure(exception) =>
-        exception
+        ExceptionUtils.getStackTrace(exception)
       }
       .log("rss-feed-error")
       .withAttributes(Attributes.logLevels(onElement = Logging.ErrorLevel))
@@ -108,7 +109,9 @@ class FreelancerDataSource @Inject() (
   private def jobFetchErrorSink =
     Flow[(Try[UnsavedRawJob], String)]
       .collect { case (Failure(exception), id) =>
-        new Exception(s"Error while processing '$id'", exception)
+        ExceptionUtils.getStackTrace(
+          new Exception(s"Error while processing '$id'", exception)
+        )
       }
       .log("job-fetch-error")
       .withAttributes(Attributes.logLevels(onElement = Logging.ErrorLevel))
@@ -157,16 +160,17 @@ class FreelancerDataSource @Inject() (
   override def apply(): Source[UnsavedRawJob, _] =
     rssFeedIdSource
       .scan(ParsedRssFeed()) {
-        case (ParsedRssFeed(lastBatch, _, _), currentBatch) =>
+        case (ParsedRssFeed(lastBatch, _), currentBatch) =>
           val diff =
             currentBatch.filterNot(id => lastBatch.exists(_.equals(id)))
-          ParsedRssFeed(currentBatch, diff, currentBatch.size - diff.size)
+          ParsedRssFeed(currentBatch, diff)
       }
       .throttle(
         configuration.sourceThrottleMaxCost,
         configuration.sourceThrottlePer,
-        _.numberOfDuplicates
+        batch => batch.lastBatch.size - batch.difference.size
       )
+      .async
       .log(
         "freelancer-data-source",
         { parsedFeed =>
@@ -180,7 +184,6 @@ class FreelancerDataSource @Inject() (
 object FreelancerDataSource {
   case class ParsedRssFeed(
       lastBatch: Seq[String] = Nil,
-      difference: Seq[String] = Nil,
-      numberOfDuplicates: Int = 0
+      difference: Seq[String] = Nil
   )
 }

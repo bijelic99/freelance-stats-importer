@@ -40,7 +40,8 @@ libraryDependencies ++= Seq(
   "com.freelance-stats" %% "amazon-async-s3-client" % "0.0.5",
   "com.freelance-stats" %% "commons" % "0.0.11",
   "org.apache.tika" % "tika-core" % "2.2.1",
-  "org.scala-lang.modules" %% "scala-xml" % "2.0.1"
+  "org.scala-lang.modules" %% "scala-xml" % "2.0.1",
+  "org.apache.commons" % "commons-lang3" % "3.12.0"
 )
 
 resolvers ++= Seq(

@@ -2,7 +2,7 @@
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+            <pattern>%logger %d{HH:mm:ss.SSS dd-MM-yyyy} %-5level - %msg%n</pattern>
         </encoder>
     </appender>
 
@@ -10,22 +10,13 @@
         <file>logs/freelance-stats-importer.log</file>
         <append>true</append>
         <encoder>
-            <pattern>%date %level [%thread] %logger{10} [%file:%line] %msg%n</pattern>
+            <pattern>%logger %d{HH:mm:ss.SSS dd-MM-yyyy} %-5level - [%file:%line] %msg%n</pattern>
         </encoder>
     </appender>
 
-
-
-    <logger name="com.freelanceStats.components.dataSource" level="info">
-        <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <logger name="com.freelanceStats.components.jobArchiver" level="info">
-        <appender-ref ref="STDOUT"/>
-    </logger>
-
-    <root level="info">
+    <logger level="info" name="com.freelanceStats">
         <appender-ref ref="STDOUT" />
         <appender-ref ref="FILE" />
-    </root>
+    </logger>
+
 </configuration>
