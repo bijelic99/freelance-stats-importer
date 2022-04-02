@@ -42,7 +42,7 @@ class FreelancerDataSource @Inject() (
       .withAttributes(Attributes.logLevels(onElement = Logging.ErrorLevel))
       .to(Sink.ignore)
 
-  private lazy val idExtractRegex = """^.+_(\d+)$""".r //"""_(\d+)$""".r
+  private lazy val idExtractRegex = """^.+_(\d+)$""".r
 
   private def idExtractFlow: Flow[Elem, Seq[String], NotUsed] =
     Flow[Elem]
@@ -58,6 +58,11 @@ class FreelancerDataSource @Inject() (
   private def rssFeedIdSource: Source[Seq[String], NotUsed] =
     Source
       .repeat(NotUsed)
+      .throttle(
+        configuration.sourceThrottleElements,
+        configuration.sourceThrottlePer
+      )
+      .log("rss-feed-id-source", _ => "Fetching ids from rss feed")
       .map(
         HttpRequest(
           method = HttpMethods.GET,
@@ -165,12 +170,6 @@ class FreelancerDataSource @Inject() (
             currentBatch.filterNot(id => lastBatch.exists(_.equals(id)))
           ParsedRssFeed(currentBatch, diff)
       }
-      .throttle(
-        configuration.sourceThrottleMaxCost,
-        configuration.sourceThrottlePer,
-        batch => batch.lastBatch.size - batch.difference.size
-      )
-      .async
       .log(
         "freelancer-data-source",
         { parsedFeed =>

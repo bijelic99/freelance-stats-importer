@@ -15,9 +15,9 @@ class FreelancerSourceConfiguration {
     configuration
       .getString("sources.freelancer.url")
 
-  val sourceThrottleMaxCost: Int =
+  val sourceThrottleElements: Int =
     configuration
-      .getInt("sources.freelancer.sourceThrottle.maxCost")
+      .getInt("sources.freelancer.sourceThrottle.elements")
 
   val sourceThrottlePer: FiniteDuration =
     configuration
