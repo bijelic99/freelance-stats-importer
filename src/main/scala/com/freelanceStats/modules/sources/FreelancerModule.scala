@@ -3,14 +3,13 @@ package com.freelanceStats.modules.sources
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 import com.freelanceStats.components.S3Client
-import com.freelanceStats.components.dataSource.{
-  DataSource,
-  FreelancerDataSource
-}
+import com.freelanceStats.components.dataSource.DataSource
+import com.freelanceStats.components.dataSource.freelancer.FreelancerDataSource
 import com.freelanceStats.components.jobArchiver.{
   DateBasedJobArchiver,
   JobArchiver
 }
+import com.freelanceStats.components.lastImportedElementDateTimeProvider.LastImportedElementDateTimeProvider
 import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
 import com.google.inject.{AbstractModule, Provides}
@@ -23,7 +22,8 @@ class FreelancerModule extends AbstractModule {
   @Singleton
   def dataSourceProvider(
       configuration: FreelancerSourceConfiguration,
-      applicationConfiguration: ApplicationConfiguration
+      applicationConfiguration: ApplicationConfiguration,
+      lastImportedElementDateTimeProvider: LastImportedElementDateTimeProvider
   )(implicit
       actorSystem: ActorSystem,
       executionContext: ExecutionContext,
@@ -31,7 +31,8 @@ class FreelancerModule extends AbstractModule {
   ): DataSource =
     new FreelancerDataSource(
       configuration,
-      applicationConfiguration
+      applicationConfiguration,
+      lastImportedElementDateTimeProvider
     )
 
   @Provides

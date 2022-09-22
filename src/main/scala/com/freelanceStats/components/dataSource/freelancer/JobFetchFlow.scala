@@ -1,100 +1,32 @@
-package com.freelanceStats.components.dataSource
+package com.freelanceStats.components.dataSource.freelancer
+
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.event.{Logging, LoggingAdapter}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest}
-import akka.stream.scaladsl.{Flow, Sink, Source, StreamConverters}
 import akka.stream.{Attributes, Materializer}
+import akka.stream.scaladsl.{Flow, Sink, StreamConverters}
 import com.freelanceStats.commons.models.UnsavedRawJob
-import com.freelanceStats.components.dataSource.FreelancerDataSource.ParsedRssFeed
 import com.freelanceStats.configurations.ApplicationConfiguration
 import com.freelanceStats.configurations.sources.FreelancerSourceConfiguration
 import org.apache.commons.lang3.exception.ExceptionUtils
 
 import java.io.ByteArrayInputStream
-import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
-import scala.xml.{Elem, XML}
 
-class FreelancerDataSource @Inject() (
-    val configuration: FreelancerSourceConfiguration,
+case class JobFetchFlow(
+    configuration: FreelancerSourceConfiguration,
     applicationConfiguration: ApplicationConfiguration
 )(
     implicit val actorSystem: ActorSystem,
     implicit val executionContext: ExecutionContext,
     implicit val materializer: Materializer
-) extends DataSource {
+) {
 
   implicit val log: LoggingAdapter =
     Logging(materializer.system, getClass)
-
-  private lazy val rssFeedConnectionPool =
-    Http().superPool[NotUsed]()
-
-  private def rssFeedFetchErrorSink: Sink[Try[Elem], NotUsed] =
-    Flow[Try[Elem]]
-      .collect { case Failure(exception) =>
-        ExceptionUtils.getStackTrace(exception)
-      }
-      .log("rss-feed-error")
-      .withAttributes(Attributes.logLevels(onElement = Logging.ErrorLevel))
-      .to(Sink.ignore)
-
-  private lazy val idExtractRegex = """^.+_(\d+)$""".r
-
-  private def idExtractFlow: Flow[Elem, Seq[String], NotUsed] =
-    Flow[Elem]
-      .map { feed =>
-        (feed \\ "item")
-          .map(_ \ "guid")
-          .map(_.text)
-          .collect { case idExtractRegex(id) =>
-            id
-          }
-      }
-
-  private def rssFeedIdSource: Source[Seq[String], NotUsed] =
-    Source
-      .repeat(NotUsed)
-      .throttle(
-        configuration.sourceThrottleElements,
-        configuration.sourceThrottlePer
-      )
-      .log("rss-feed-id-source", _ => "Fetching ids from rss feed")
-      .map(
-        HttpRequest(
-          method = HttpMethods.GET,
-          uri = s"${configuration.url}/rss.xml"
-        ) -> _
-      )
-      .via(rssFeedConnectionPool)
-      .map {
-        case (Success(response), _) if response.status.isSuccess() =>
-          Success(
-            XML.load(
-              response.entity.dataBytes
-                .runWith(StreamConverters.asInputStream())
-            )
-          )
-        case (Success(response), _) =>
-          Failure(
-            new Exception(
-              s"Rss feed returned non 200 status code: '${response.status}'"
-            )
-          )
-        case (Failure(exception), _) =>
-          Failure(exception)
-      }
-      .divertTo(
-        rssFeedFetchErrorSink,
-        _.isFailure
-      )
-      .collect { case Success(elem) =>
-        elem
-      }
-      .via(idExtractFlow)
 
   private lazy val jobFetchConnectionPool =
     Http().superPool[String]()
@@ -122,7 +54,7 @@ class FreelancerDataSource @Inject() (
       .withAttributes(Attributes.logLevels(onElement = Logging.ErrorLevel))
       .to(Sink.ignore)
 
-  private def jobFetchFlow: Flow[String, UnsavedRawJob, NotUsed] =
+  def apply(): Flow[String, UnsavedRawJob, NotUsed] =
     Flow[String]
       .map { id =>
         HttpRequest(
@@ -161,28 +93,4 @@ class FreelancerDataSource @Inject() (
       .collect { case (Success(job), _) =>
         job
       }
-
-  override def apply(): Source[UnsavedRawJob, _] =
-    rssFeedIdSource
-      .scan(ParsedRssFeed()) {
-        case (ParsedRssFeed(lastBatch, _), currentBatch) =>
-          val diff =
-            currentBatch.filterNot(id => lastBatch.exists(_.equals(id)))
-          ParsedRssFeed(currentBatch, diff)
-      }
-      .log(
-        "freelancer-data-source",
-        { parsedFeed =>
-          s"Fetching ${parsedFeed.difference.size} jobs"
-        }
-      )
-      .flatMapConcat(feed => Source(feed.difference))
-      .via(jobFetchFlow)
-}
-
-object FreelancerDataSource {
-  case class ParsedRssFeed(
-      lastBatch: Seq[String] = Nil,
-      difference: Seq[String] = Nil
-  )
 }

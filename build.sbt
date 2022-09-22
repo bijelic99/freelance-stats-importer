@@ -35,13 +35,15 @@ libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-classic" % "1.2.10",
   "com.typesafe" % "config" % "1.4.1",
   "com.typesafe.akka" %% "akka-stream" % AkkaVersion,
+  "com.typesafe.akka" %% "akka-stream-typed" % AkkaVersion,
   "com.typesafe.akka" %% "akka-http" % "10.2.7",
   "com.freelance-stats" %% "alpakka-rabbitmq-client" % "0.0.3",
   "com.freelance-stats" %% "amazon-async-s3-client" % "0.0.5",
   "com.freelance-stats" %% "commons" % "commons-0.0.28",
   "org.apache.tika" % "tika-core" % "2.2.1",
   "org.scala-lang.modules" %% "scala-xml" % "2.0.1",
-  "org.apache.commons" % "commons-lang3" % "3.12.0"
+  "org.apache.commons" % "commons-lang3" % "3.12.0",
+  "com.sksamuel.elastic4s" %% "elastic4s-client-esjava" % "7.17.1"
 )
 
 resolvers ++= Seq(
