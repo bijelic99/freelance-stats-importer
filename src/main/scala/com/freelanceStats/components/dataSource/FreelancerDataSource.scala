@@ -176,7 +176,7 @@ class FreelancerDataSource @Inject() (
           s"Fetching ${parsedFeed.difference.size} jobs"
         }
       )
-      .flatMapConcat(feed => Source(feed.difference))
+      .mapConcat(_.difference)
       .via(jobFetchFlow)
 }
 
