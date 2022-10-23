@@ -15,14 +15,14 @@ import javax.inject.Inject
 class DateBasedJobArchiver @Inject() (
     s3Client: S3Client,
     applicationConfiguration: ApplicationConfiguration
-)(override implicit val materializer: Materializer)
+)(implicit val materializer: Materializer)
     extends JobArchiver {
 
   private val mimeTypes = TikaConfig.getDefaultConfig.getMimeRepository
 
   val name: String = "job-archiver"
 
-  override implicit val log: LoggingAdapter =
+  implicit val log: LoggingAdapter =
     Logging(materializer.system, getClass)
 
   override def apply(): Flow[UnsavedRawJob, RawJob, _] =
